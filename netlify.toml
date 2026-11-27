@@ -1,0 +1,10 @@
+# Netlify serves the game straight from this folder: plain HTML/JS, no build step.
+[build]
+  publish = "."
+  command = ""
+
+# Check for a new app.js, data.json and hist.json on every visit, so a new push reaches the phone right away.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cache-Control = "no-cache"

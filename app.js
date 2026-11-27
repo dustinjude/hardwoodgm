@@ -729,7 +729,7 @@ const canResignAt = (p, y) => !(hardCap() && !G.noCap && committed(capYear()) + 
 // The contract box on a player's page: what he wants, why, what it does to your cap, and the lengths you can offer.
 function dealBox(p, re) {
 	const m = mood(p), ask = userAsk(p), y0 = p.askY, cap = opt("cap"), cy = capYear(), pay = committed(cy), room = cap - pay, after = pay + ask, yMax = age(p) + (off() ? 1 : 0) >= 32 ? 2 : 4, tax = TAXL();
-	if (re && m.no) return `<section><h2 class="d">His contract is up</h2><p class="bad"><b>He will not re-sign: he wants to play for a winner.</b></p><p class="note">He becomes a free agent when you finish re-signing.</p></section>`;
+	if (re && m.no) return `<section><h2 class="d">His contract is up</h2><p class="bad"><b>He will not re-sign: he wants to play for a winner.</b></p><p class="note">He becomes a free agent when you finish re-signing.</p>${agentHtml(p, true)}</section>`;
 	const pctx = (d) => (d > 0 ? "+" : "−") + Math.round(Math.abs(d) * 100) + "%", others = re ? 0 : G.teams.filter((t) => t.tid !== G.userTid && canSign(t.tid, p)).length;
 	let fit;
 	if (re) fit = `You may go over the cap to re-sign your own players${hardCap() && !G.noCap ? ", except under this league's hard cap" : ""}. With him, your payroll next season would be ${money(after)}: ${after <= cap ? `${money(cap - after)} under the cap, so that much room is left for free agents` : `${money(after - cap)} over the cap, so only minimum deals for free agents`}.${tax < 1e8 && after > tax ? ` That is above the luxury tax line of ${money(tax)}; you would owe about ${money(1.5 * (after - tax))} in tax.` : ""}`;
@@ -747,6 +747,7 @@ function dealBox(p, re) {
 	<p class="note">${esc(fit)}${re ? "" : ` ${others ? `${others} other team${others === 1 ? " has" : "s have"} room for him right now.` : "No other team has room for him right now."}${G.phase === "fa" && p.ask > MINSAL ? " His price drops about 1.5% a day while he is unsigned." : ""}`}</p>
 	<p class="note"><b>Offer a contract.</b> He wants ${y0} year${y0 > 1 ? "s" : ""}, through ${seasonName(cy + y0 - 1)}; other lengths cost 5% more for each year of difference.</p>
 	<div class="row" style="flex-wrap:wrap">${[1, 2, 3, 4].slice(0, yMax).map(btn).join("")}</div>
+	${agentHtml(p, re)}
 	<div class="row"><button class="btn alt" style="flex:1" data-a="cap">Your cap and contracts</button></div></section>`;
 }
 // The user's cap sheet: payroll against the cap and tax line, the rules, every contract and future commitments.
@@ -846,7 +847,7 @@ function draftView() {
 // The top of a prospect's page: scouts' rank, projection, standout skills and the draft button.
 function prospectBox(p) {
 	const P = poolInfo(), rk = P.rank.get(p.id), s = P.str(p), d = G.phase === "draft" ? G.draft : null, onClock = d && d.order[d.i] === G.userTid, nx = d ? d.order.findIndex((t, i) => t === G.userTid && i >= d.i) : -1;
-	return `<section><h2 class="d">Draft prospect</h2><p class="note"><b>Scouts' rank #${rk} of ${P.n}, ${projLabel(rk)}.</b>${s.length ? ` Stands out as a ${esc(s.join(" and "))}.` : ""} He is ${p.ovr} now and could reach ${p.pot}.</p>${onClock ? `<button class="btn go" data-a="draft" data-id="${p.id}">Draft him with pick #${d.i + 1}</button>` : d ? `<p class="note">${nx >= 0 ? `Your next pick is #${nx + 1}; he may be gone by then.` : "You have no picks left in this draft."}</p>` : ""}</section>`;
+	return `<section><h2 class="d">Draft prospect</h2><p class="note"><b>Scouts' rank #${rk} of ${P.n}, ${projLabel(rk)}.</b>${s.length ? ` Stands out as a ${esc(s.join(" and "))}.` : ""} He is ${p.ovr} now and could reach ${p.pot}.</p>${scoutHtml(p)}${onClock ? `<button class="btn go" data-a="draft" data-id="${p.id}">Draft him with pick #${d.i + 1}</button>` : d ? `<p class="note">${nx >= 0 ? `Your next pick is #${nx + 1}; he may be gone by then.` : "You have no picks left in this draft."}</p>` : ""}</section>`;
 }
 const LV = [[1, 2, 3.5, 5.5, 8], [.5, 1, 1.5, 2.5, 4], [1, 2, 3, 5, 8]], TV = 40, DEBT = 25;
 const newFin = () => ({ cash: 40, price: 60, lv: [3, 3, 3], cur: { gate: 0, merch: 0, tv: 0, sal: 0, bud: 0, att: 0, hg: 0 }, hist: [] });
@@ -1130,30 +1131,89 @@ function liveScore() {
 const liveRow = (e) => `<div><span>${e.pts ? "<b>" : ""}${esc(e.txt)}${e.pts ? "</b>" : ""}</span><span class="mute" style="white-space:nowrap">${e.ab ? esc(e.ab) + " · " : ""}${e.s[0]}–${e.s[1]}</span></div>`;
 function watchNext(po) { const n = G.log.length; UI.record = true; if (po) playPlayoffs("day"); else playDays(1, true); UI.record = false; if (G.log.length > n) startLive(G.log.length - 1); }
 
-/* ---------- game recaps ----------
-   A short game story written by Claude from one of your box scores, only when you tap "Write a game recap". The box
-   score goes to this site's own /api/recap function (netlify/functions/recap.mjs), which holds the API key and asks
-   Claude. Recaps are kept in memory for this visit only, not in the save, so the save shape doesn't change. */
-const RECAP = {};
-function recapKey(i) { return G.season + "-" + i; }
-function recapFacts(g) {
-	const side = (t, rows, pts, q) => ({ team: t.region + " " + t.name, pts, q: q || [], players: rows.filter((r) => r[1] > 0).sort((a, b) => b[2] - a[2]).slice(0, 6).map((r) => ({ n: r[0], min: r[1], pts: r[2], reb: r[3], ast: r[4], stl: r[5], blk: r[6], fg: r[8] + "-" + r[9], tp: r[7] + "-" + r[10], ft: r[11] + "-" + r[12] })) });
-	return { season: seasonName(G.season), playoffs: !!g.po, home: !!g.home, you: side(team(G.userTid), g.b[0], g.us, g.q && g.q[0]), opp: side(team(g.o), g.b[1], g.them, g.q && g.q[1]) };
-}
-function recapFetch(i) {
-	const g = G.log[i], k = recapKey(i); if (!g || !g.b || (RECAP[k] && (RECAP[k].wait || RECAP[k].text))) return;
-	RECAP[k] = { wait: true };
-	fetch("/api/recap", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(recapFacts(g)) })
+/* ---------- Claude features ----------
+   Game recaps, the weekly newsletter, scouting reports, the agent, the other GM in a trade and the assistant GM are all
+   written by Claude, and only when you tap for one. The game sends that feature's facts to this site's own /api/claude
+   function (netlify/functions/claude.mjs), which holds the API key and asks Claude. Replies are kept in memory for this
+   visit only, never in the save, so the save shape doesn't change.
+   Each reply has a key: its kind, then what it is about (recap:season:game, scout:season:id, ...). aiBox(key) draws
+   the button, the waiting line or the reply; tapping the button calls AIF[kind](key) for the facts. */
+const AI = {};
+const pInfo = (p, price) => { const st = off() && p.ls ? p.ls : p.s, gp = st && st[0]; return { n: p.n, pos: p.pos, age: age(p) + (off() ? 1 : 0), ovr: p.ovr, pot: p.pot, ...(price != null ? { sal: price, exp: capYear() + (p.askY || 1) - 1 } : p.tid >= 0 ? { sal: p.sal, exp: p.exp } : {}), ...(gp ? { ppg: st[2] / gp, rpg: st[3] / gp, apg: st[4] / gp } : {}) }; };
+const tFull = (t) => t.region + " " + t.name;
+const confRank = (t) => { const c = standings(t.cid); return ORD(c.indexOf(t) + 1) + " in the " + (t.cid ? "West" : "East"); };
+const nowText = () => G.phase === "regular" ? `week ${Math.floor(G.day / 7) + 1} of the regular season` : G.phase === "playoffs" ? `the playoffs, ${ROUND[G.po.round]}` : G.phase === "draft" ? "the draft" : G.phase === "resign" ? "the offseason, re-signing" : `free agency, day ${G.faDay || 0}`;
+const AIF = {
+	recap(key) {
+		const g = G.log[+key.split(":")[2]]; if (!g || !g.b) return null;
+		const side = (t, rows, pts, q) => ({ team: tFull(t), pts, q: q || [], players: rows.filter((r) => r[1] > 0).sort((a, b) => b[2] - a[2]).slice(0, 6).map((r) => ({ n: r[0], min: r[1], pts: r[2], reb: r[3], ast: r[4], stl: r[5], blk: r[6], fg: r[8] + "-" + r[9], tp: r[7] + "-" + r[10], ft: r[11] + "-" + r[12] })) });
+		return { season: seasonName(G.season), playoffs: !!g.po, home: !!g.home, you: side(team(G.userTid), g.b[0], g.us, g.q && g.q[0]), opp: side(team(g.o), g.b[1], g.them, g.q && g.q[1]) };
+	},
+	news() {
+		const conf = (cid) => standings(cid).map((t) => ({ n: tFull(t), w: t.w, l: t.l, me: t.tid === G.userTid })), ps = G.players.filter((p) => p.tid >= 0 && p.s && p.s[0]), most = Math.max(1, ...ps.map((p) => p.s[0]));
+		const q = ps.filter((p) => p.s[0] >= .6 * most);
+		return { season: seasonName(G.season), when: nowText(), east: conf(0), west: conf(1), news: G.news.filter((n) => n.s === G.season).slice(0, 14).map((n) => n.t),
+			leaders: q.length ? LEAD.map(([k, l]) => ({ cat: l, rows: q.slice().sort((a, b) => b.s[k] / b.s[0] - a.s[k] / a.s[0]).slice(0, 3).map((p) => ({ n: p.n, t: team(p.tid).ab, v: p.s[k] / p.s[0] })) })) : [] };
+	},
+	scout(key) {
+		const p = byId(+key.split(":")[2]); if (!p || p.tid !== -2) return null; const P = poolInfo(), rk = P.rank.get(p.id);
+		return { n: p.n, pos: p.pos, age: age(p) + (off() ? 1 : 0), hgt: ht(p), ovr: p.ovr, pot: p.pot, rank: rk, of: P.n, proj: projLabel(rk), str: P.str(p), r: RLAB.filter(([, k]) => p.r[k] != null).map(([l, k]) => ({ l, v: p.r[k] })) };
+	},
+	agent(key) {
+		const [, id, , re] = key.split(":"), p = byId(+id); if (!p || p.ask == null) return null; const m = mood(p), t = team(G.userTid), resign = re === "1";
+		return { p: pInfo(p), resign, team: tFull(t), w: t.w, l: t.l, market: p.ask, price: userAsk(p), yrs: p.askY, why: m.f.map(([w, d]) => ({ t: w, d: Math.round(d * 100) })), no: resign && m.no, others: resign ? null : G.teams.filter((x) => x.tid !== G.userTid && canSign(x.tid, p)).length };
+	},
+	trade() {
+		const o = team(UI.tradeTid), c = tradeCheck(), pk = (l) => l.map(pkFind).filter(Boolean).map(pkLabel), ps = (l) => l.map(byId).filter(Boolean).map((p) => pInfo(p));
+		return { them: tFull(o), w: o.w, l: o.l, rank: confRank(o), get: ps(UI.tradeA), getPk: pk(UI.tradePA), give: ps(UI.tradeB), givePk: pk(UI.tradePB), verdict: c.msg };
+	},
+	ask(key) {
+		const a = (UI.asks || []).find((x) => x.key === key), t = team(G.userTid), tax = TAXL(); if (!a) return null;
+		const rules = capFree() ? "There is no salary cap for you in this league." : hardCap() ? "Hard cap: no team may go over the cap, even to re-sign its own players." : "Soft cap: you may go over it to re-sign your own players, sign anyone at $1.5M or less, and take back up to 125% of outgoing salary in trades when over it.";
+		let plan = ""; try { plan = stratSummary(); } catch (e) { plan = ""; }
+		return { q: a.q, season: seasonName(G.season), when: nowText(), team: tFull(t), w: t.w, l: t.l, rank: confRank(t), rating: teamRating(t.tid), pay: payroll(t.tid), cap: opt("cap"), tax: tax < 1e8 ? tax : 0, rules, plan,
+			roster: sortRoster(t.tid).map((p) => pInfo(p)), fa: G.players.filter((p) => p.tid === -1).sort((x, y) => y.ovr - x.ovr).slice(0, 10).map((p) => pInfo(p, p.ask != null ? userAsk(p) : null)),
+			targets: G.players.filter((p) => p.tid >= 0 && p.tid !== t.tid).sort((x, y) => y.ovr - x.ovr).slice(0, 15).map((p) => ({ ...pInfo(p), n: p.n + ", " + team(p.tid).ab })),
+			standings: standings().map((x) => ({ n: tFull(x), w: x.w, l: x.l })) };
+	},
+};
+function aiFetch(key) {
+	const kind = key.split(":")[0]; if (!AIF[kind] || (AI[key] && (AI[key].wait || AI[key].text))) return;
+	let facts = null; try { facts = AIF[kind](key); } catch (e) { facts = null; }
+	if (!facts) { AI[key] = { err: 1 }; return; }
+	AI[key] = { wait: true };
+	fetch("/api/claude", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, facts }) })
 		.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-		.then((d) => { RECAP[k] = d && d.text ? { text: d.text } : { err: 1 }; })
-		.catch(() => { RECAP[k] = { err: 1 }; })
-		.then(() => { if (UI.sheet && UI.sheet.k === "box" && UI.sheet.i === i) { UI.keepScroll = true; render(); } });
+		.then((d) => { AI[key] = d && d.text ? { text: d.text } : { err: 1 }; })
+		.catch(() => { AI[key] = { err: 1 }; })
+		.then(() => { if (document.querySelector(`[data-aikey="${CSS.escape(key)}"]`)) { UI.keepScroll = true; render(); } });
 }
-function recapHtml(i) {
-	const r = RECAP[recapKey(i)];
-	if (r && r.text) { const [hd, ...rest] = r.text.split(/\n+/).filter((x) => x.trim()); return `<div class="recap"><b>${esc(hd)}</b>${rest.map((x) => `<p>${esc(x)}</p>`).join("")}<p class="note">Written by Claude from this box score.</p></div>`; }
-	if (r && r.wait) return '<p class="note">Writing the recap…</p>';
-	return `<button class="btn alt" data-a="recap" data-i="${i}">Write a game recap</button><p class="note">${r && r.err ? "The recap couldn't be written. Recaps work on the online version, with a connection." : "Sends this box score to Claude, which writes a short story of the game."}</p>`;
+// A reply as paragraphs. With head, the first line is a headline; short lines without an ending stop are section headings.
+function aiText(text, head) {
+	return text.split(/\n+/).map((x) => x.trim()).filter(Boolean).map((x, i) => (head && i === 0) || (head && x.length < 48 && !/[.!?:,]$/.test(x)) ? `<b>${esc(x)}</b>` : `<p>${esc(x)}</p>`).join("");
+}
+// The button, the waiting line or the reply for one key. o: { btn, about, wait, by, head }.
+function aiBox(key, o) {
+	const r = AI[key];
+	const inner = r && r.text ? `<div class="recap">${aiText(r.text, o.head)}<p class="note">${esc(o.by || "Written by Claude.")}</p></div>`
+		: r && r.wait ? `<p class="note">${esc(o.wait || "Writing…")}</p>`
+		: `<button class="btn alt" data-a="ai" data-k="${esc(key)}">${esc(o.btn)}</button><p class="note">${r && r.err ? "That couldn't be written. These work on the online version, with a connection." : esc(o.about)}</p>`;
+	return `<div data-aikey="${esc(key)}">${inner}</div>`;
+}
+const recapHtml = (i) => aiBox(`recap:${G.season}:${i}`, { btn: "Write a game recap", about: "Sends this box score to Claude, which writes a short story of the game.", wait: "Writing the recap…", by: "Written by Claude from this box score.", head: true });
+const newsHtml = () => `<section><h2 class="d">Around the League</h2>${aiBox(`news:${G.season}:${G.phase}:${G.phase === "regular" ? Math.floor(G.day / 7) : G.phase === "playoffs" ? G.po.round : G.faDay || 0}`, { btn: "Read this week's newsletter", about: "Sends the standings, the league leaders and this season's news to Claude, which writes a newsletter about the week.", wait: "Writing the newsletter…", by: "Written by Claude from this league's standings, leaders and news.", head: true })}</section>`;
+const scoutHtml = (p) => aiBox(`scout:${G.season}:${p.id}`, { btn: "Read the scouting report", about: "Sends his ratings and draft position to Claude, which writes a scout's report.", wait: "Writing the report…", by: "Written by Claude from his ratings." });
+const agentHtml = (p, re) => aiBox(`agent:${p.id}:${userAsk(p)}:${re ? 1 : 0}`, { btn: "Hear from his agent", about: "Sends his price and the reasons behind it to Claude, which answers as his agent. The price itself does not change.", wait: "Calling his agent…", by: "Claude speaking as his agent. The price and reasons are the game's." });
+function tradeTalkHtml() {
+	// Only when their side has judged the value: a deal stopped by a rule (cap, roster size) is not theirs to explain.
+	const c = tradeCheck(); if (!c.ok && !/want more|not interested/.test(c.msg)) return "";
+	const sig = [UI.tradeTid, UI.tradeA.slice().sort().join(","), UI.tradeB.slice().sort().join(","), UI.tradePA.slice().sort().join(","), UI.tradePB.slice().sort().join(",")].join("|");
+	return aiBox(`trade:${sig}`, { btn: `Ask the ${team(UI.tradeTid).name} GM`, about: "Sends this offer and the game's answer to Claude, which explains it as their general manager. Their answer does not change.", wait: "Waiting on their GM…", by: "Claude speaking as their GM. The decision is the game's." });
+}
+function askHtml() {
+	return `<section><h2 class="d">Ask your assistant GM</h2><p class="note">Ask about your roster, the cap, free agents or trade targets. Your question and your team's facts go to Claude.</p>
+	<div class="row"><input type="text" id="askq" maxlength="300" placeholder="Who could fix our defense under $10M?" value="${esc(UI.askQ || "")}" aria-label="Your question"><button class="btn go" style="width:auto" data-a="askgm">Ask</button></div>
+	${(UI.asks || []).slice().reverse().map((a) => `<p class="note" style="margin-top:12px"><b>You asked:</b> ${esc(a.q)}</p>${aiBox(a.key, { btn: "Try again", about: "", wait: "Thinking it over…", by: "Claude, from your league's facts." })}`).join("")}</section>`;
 }
 
 /* ---------- saving ---------- */
@@ -1268,6 +1328,8 @@ function vHome() {
 	${up.length ? `<section><h2 class="d">Coming up</h2><div class="list">${up.map((g) => { const o = team(g[0] === t.tid ? g[1] : g[0]); return `<div data-a="viewteam" data-tid="${o.tid}" style="cursor:pointer"><span>${g[0] === t.tid ? "vs" : "at"} ${tname(o)}</span><span class="mute">${o.w}–${o.l}</span></div>`; }).join("")}</div></section>` : ""}
 	${G.log.length || up.length ? '<button class="btn alt" data-a="sched">Full schedule and results</button>' : ""}
 	${G.prog && G.phase === "regular" && G.season === G.prog.s && G.day < 14 ? (() => { const sm = progSummary(); if (!sm) return ""; const top = sm.rs.slice().sort((x, y) => Math.abs(y[0][2] - y[0][1]) - Math.abs(x[0][2] - x[0][1])).slice(0, 4); return `<section><h2 class="d">Player development <small>before ${seasonName(G.prog.s)}</small></h2><p class="note">Your team: average rating ${f1(sm.b)} → ${f1(sm.n)}, ${sm.up} improved, ${sm.dn} declined.</p><div class="list">${top.map(([r, p]) => `<div data-a="player" data-id="${p.id}" style="cursor:pointer"><span><b>${esc(p.n)}</b><span class="sub">age ${r[6]}${progBits(r) ? " · " + esc(progBits(r)) : ""}</span></span><b>${r[1]} → ${r[2]} ${dvTag(r[2] - r[1])}</b></div>`).join("")}</div><button class="btn alt" data-a="prog">See the full report</button></section>`; })() : ""}
+	${newsHtml()}
+	${askHtml()}
 	<section><h2 class="d">News</h2><div class="chips">${[["", "All"], ["trade", "Trades"], ["sign", "Signings"], ["inj", "Injuries"], ["big", "Big games"]].map(([k, l]) => `<button class="chip" aria-pressed="${(UI.nf || "") === k}" data-a="nfilter" data-k="${k}">${l}</button>`).join("")}</div><div class="list">${G.news.filter((n) => !UI.nf || { trade: /^Trade|offer for/, sign: /sign|draft|Expansion/i, inj: /will miss about/, big: /scores \d|triple-double|All-Star|Achievement|title|retires|lottery|deadline/ }[UI.nf].test(n.t)).slice(0, UI.nf ? 30 : 10).map((n) => `<div><span>${esc(n.t)}</span><span class="mute" style="white-space:nowrap">${n.s !== G.season ? seasonName(n.s) : ""}</span></div>`).join("") || '<div class="mute">Nothing yet.</div>'}</div></section>
 	${leaguesBox()}`;
 }
@@ -1359,7 +1421,7 @@ function vMoves() {
 	}
 	else if (UI.moves === "draft" && G.phase !== "draft") { const y = G.season + (off() ? 1 : 0), ps = prospects(), mine = G.picks.filter((k) => k.t === G.userTid && k.y === y); body = `<section><h2 class="d">${y} draft class</h2><p class="note">You hold: ${esc(mine.map(pkLabel).join(", ") || "no picks in this draft")}.${ps.length ? " Your scouts rank the class below, with where each player would likely go." : " The class arrives when the season starts."}</p>${ps.length ? prospectTable("scout", ps) : ""}</section>`; }
 	else if (UI.moves === "draft") { const d = G.draft; body = `${draftView()}${d.lot && d.lot.length ? `<section><h2 class="d">Lottery <small>teams that missed the playoffs</small></h2><div class="scroll"><table><tr><th>Pick</th><th style="text-align:left">Team</th><th>Record</th><th>Move</th></tr>${d.lot.map((x) => `<tr class="${x[0] === G.userTid ? "me" : ""}"><td>${x[2] + 1}</td><td style="text-align:left">${tname(team(x[0]))}${d.order[x[2]] !== x[0] ? ` <span class="sub">to ${esc(team(d.order[x[2]]).ab)}</span>` : ""}</td><td>${x[3]}–${x[4]}</td><td class="${x[1] > x[2] ? "good" : x[1] < x[2] ? "bad" : "mute"}">${x[1] > x[2] ? "▲ " + (x[1] - x[2]) : x[1] < x[2] ? "▼ " + (x[2] - x[1]) : "–"}</td></tr>`).join("")}</table></div><p class="note">${opt("lot") === "none" ? "No lottery in this league: the worst record picks first." : opt("lot") === "flat" ? "The three top picks are drawn with even odds." : "The three top picks are drawn; worse records get better odds."}</p></section>` : ""}`; }
-	else { if (UI.tradeTid == null || UI.tradeTid === G.userTid) UI.tradeTid = G.teams.find((t) => t.tid !== G.userTid).tid; const o = team(UI.tradeTid), c = tradeCheck(), pks = (tid, sel, side) => `<div class="list">${tradablePicks(tid).map((k) => `<label><span><input type="checkbox" id="k${side}${pkKey(k)}" data-a="tpick" data-side="${side}" data-k="${pkKey(k)}" ${sel.includes(pkKey(k)) ? "checked" : ""}> <b>${esc(pkLabel(k))}</b></span></label>`).join("")}</div>`, pick = (ps, sel, side) => `<div class="list">${ps.map((p) => `<label><span><input type="checkbox" id="t${side}${p.id}" data-a="tsel" data-side="${side}" data-id="${p.id}" ${sel.includes(p.id) ? "checked" : ""}> <b>${esc(p.n)}</b> <span class="sub">${esc(p.pos)} · ${age(p)} · ${money(p.sal)} to ${p.exp}</span></span><span class="ovr">${p.ovr}</span></label>`).join("")}</div>`; body = tradeShut() ? `<section><h2 class="d">Trade</h2><p class="mute">${G.phase === "playoffs" ? "Trading reopens after the playoffs." : "The trade deadline has passed. Trading reopens after the playoffs."}</p></section>` : `<section><h2 class="d">Trade</h2><div class="row"><label for="tradeteam" class="note">With</label><select id="tradeteam" data-a="tradeteam">${G.teams.filter((t) => t.tid !== G.userTid).map((t) => `<option value="${t.tid}" ${t.tid === o.tid ? "selected" : ""}>${esc(t.region)} ${esc(t.name)}</option>`).join("")}</select></div><p class="${c.ok ? "good" : "note"}"><b>${esc(c.msg)}</b></p><div class="row"><button class="btn go" data-a="trade" ${c.ok ? "" : "disabled"}>Make this trade</button>${c.ok ? "" : '<button class="btn alt" data-a="whatwould">What would it take?</button>'}<button class="btn alt" data-a="shop" ${UI.tradeA.length + UI.tradePA.length ? "" : "disabled"}>Shop what I send to every team</button>${G.god && !c.ok ? '<button class="btn alt" data-a="forcetrade">Force this trade</button>' : ""}</div>${UI.block ? `<div class="list">${UI.block.map((o, i) => `<div><span><b>${esc(team(o.tid).name)}</b> would give <span class="sub">${esc(offerText(o, 0))}</span></span><button class="btn" data-a="blockpick" data-i="${i}">Review</button></div>`).join("") || '<div class="mute">Nobody is offering anything for that.</div>'}</div>` : ""}<h2 class="d">You send</h2>${pick(sortRoster(G.userTid), UI.tradeA, "A")}${pks(G.userTid, UI.tradePA, "A")}<h2 class="d">${esc(o.name)} send</h2>${pick(sortRoster(o.tid), UI.tradeB, "B")}${pks(o.tid, UI.tradePB, "B")}</section>`; }
+	else { if (UI.tradeTid == null || UI.tradeTid === G.userTid) UI.tradeTid = G.teams.find((t) => t.tid !== G.userTid).tid; const o = team(UI.tradeTid), c = tradeCheck(), pks = (tid, sel, side) => `<div class="list">${tradablePicks(tid).map((k) => `<label><span><input type="checkbox" id="k${side}${pkKey(k)}" data-a="tpick" data-side="${side}" data-k="${pkKey(k)}" ${sel.includes(pkKey(k)) ? "checked" : ""}> <b>${esc(pkLabel(k))}</b></span></label>`).join("")}</div>`, pick = (ps, sel, side) => `<div class="list">${ps.map((p) => `<label><span><input type="checkbox" id="t${side}${p.id}" data-a="tsel" data-side="${side}" data-id="${p.id}" ${sel.includes(p.id) ? "checked" : ""}> <b>${esc(p.n)}</b> <span class="sub">${esc(p.pos)} · ${age(p)} · ${money(p.sal)} to ${p.exp}</span></span><span class="ovr">${p.ovr}</span></label>`).join("")}</div>`; body = tradeShut() ? `<section><h2 class="d">Trade</h2><p class="mute">${G.phase === "playoffs" ? "Trading reopens after the playoffs." : "The trade deadline has passed. Trading reopens after the playoffs."}</p></section>` : `<section><h2 class="d">Trade</h2><div class="row"><label for="tradeteam" class="note">With</label><select id="tradeteam" data-a="tradeteam">${G.teams.filter((t) => t.tid !== G.userTid).map((t) => `<option value="${t.tid}" ${t.tid === o.tid ? "selected" : ""}>${esc(t.region)} ${esc(t.name)}</option>`).join("")}</select></div><p class="${c.ok ? "good" : "note"}"><b>${esc(c.msg)}</b></p>${tradeTalkHtml()}<div class="row"><button class="btn go" data-a="trade" ${c.ok ? "" : "disabled"}>Make this trade</button>${c.ok ? "" : '<button class="btn alt" data-a="whatwould">What would it take?</button>'}<button class="btn alt" data-a="shop" ${UI.tradeA.length + UI.tradePA.length ? "" : "disabled"}>Shop what I send to every team</button>${G.god && !c.ok ? '<button class="btn alt" data-a="forcetrade">Force this trade</button>' : ""}</div>${UI.block ? `<div class="list">${UI.block.map((o, i) => `<div><span><b>${esc(team(o.tid).name)}</b> would give <span class="sub">${esc(offerText(o, 0))}</span></span><button class="btn" data-a="blockpick" data-i="${i}">Review</button></div>`).join("") || '<div class="mute">Nobody is offering anything for that.</div>'}</div>` : ""}<h2 class="d">You send</h2>${pick(sortRoster(G.userTid), UI.tradeA, "A")}${pks(G.userTid, UI.tradePA, "A")}<h2 class="d">${esc(o.name)} send</h2>${pick(sortRoster(o.tid), UI.tradeB, "B")}${pks(o.tid, UI.tradePB, "B")}</section>`; }
 	return `<div class="chips">${tabs.map(([k, l]) => `<button class="chip" aria-pressed="${UI.moves === k}" data-a="moves" data-k="${k}">${l}</button>`).join("")}</div>${body}`;
 }
 function vFin() {
@@ -1585,7 +1647,8 @@ function act(a, d, el) {
 		coachFlush(); us.c.auto = false; us.lock = on.map((z) => (z === out ? inn : z)); toast(`${inn.p.n} comes in for ${out.p.n} from the next minute.`);
 	}
 	else if (a === "scday") { if (d.k !== "") UI.scDay = +d.k; UI.keepScroll = true; }
-	else if (a === "recap") { UI.keepScroll = true; recapFetch(+d.i); }
+	else if (a === "ai") aiFetch(d.k);
+	else if (a === "askgm") { const q = (($("#askq") || {}).value || "").trim().slice(0, 300); if (!q) return toast("Type a question first."); UI.askQ = ""; const key = "ask:" + Date.now(); UI.asks = [...(UI.asks || []), { q, key }].slice(-4); aiFetch(key); }
 	else if (a === "gbox") { stopLive(); UI.sheet = { k: "gbox", d: +d.d, i: +d.i, id: d.d + "-" + d.i }; }
 	else if (a === "tlog") { UI.sheet = { k: "tlog", tid: +d.tid, id: +d.tid }; }
 	else if (a === "tlall") UI.tlAll = UI.tlAll === +d.tid ? null : +d.tid;

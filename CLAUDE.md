@@ -5,7 +5,7 @@ Dustin's personal basketball GM game: run a franchise from any NBA season 1990�
 ## Hard rules
 
 - **All code here is original.** Never copy Basketball GM (zengm) code, text, UI wording or assets into this project, even though the player data was originally sourced from its public real-player files. Reimplementing a feature idea with our own code is fine.
-- Personal use only. Don't add analytics, accounts, or anything that sends data anywhere. The one exception, Dustin's call: game recaps send one box score to Claude through the site's own `/api/recap` function, and only when he taps "Write a game recap".
+- Personal use only. Don't add analytics, accounts, or anything that sends data anywhere. The one exception, Dustin's call: the Claude features (game recaps, newsletter, scouting reports, agent, trade GM, assistant GM) send that feature's league facts to Claude through the site's own `/api/claude` function, and only when he taps for one.
 - **Old saves must keep working.** Saves live in the browser (localStorage + IndexedDB). Any change to the save shape needs a step in `migrate()` in app.js, and a test that loads a save from an older version (see Testing).
 - Dustin mostly plays on his phone. Keep layouts working at 390px wide, tap targets big, and UI text in plain language (say what a setting does, not jargon).
 
@@ -48,13 +48,19 @@ it (`netlify.toml`: the folder as is, no build step). The site is private to Dus
 Netlify login. Saves stay in the browser per site, so leagues from the older Claude-artifact version (slug
 `9e5b01fe-9189-4488-8d97-3f7ce24ec211`) move over with Export and Import a league file.
 
-## Game recaps (Claude)
+## Claude features
 
-`netlify/functions/recap.mjs`, served at `/api/recap`, asks Claude (`claude-haiku-5-5`) for a short game story from
-one box score. The key is `ANTHROPIC_API_KEY` in Netlify's environment, never in the repo. The function takes box-score
-facts only (no free text), checks the origin, and rate-limits. In the game, `recapFetch`/`recapHtml` in app.js; recaps
-live in memory for the visit, not in the save. Test: `node tests/t29.mjs` (stubs the function, so no key needed).
+All go through `netlify/functions/claude.mjs`, served at `/api/claude`, which asks Claude (`claude-haiku-5-5`). The
+key is `ANTHROPIC_API_KEY` in Netlify's environment, never in the repo. The game sends `{kind, facts}`; each kind has
+its own prompt and facts formatter in the function, which sanitises everything, checks the origin and rate-limits.
+Kinds: `recap` (box score sheet), `news` (Around the League on Home), `scout` (prospect pages), `agent` (contract box
+on free agents and re-signings), `trade` (trade screen, only when their side judged the value), `ask` (assistant GM on
+Home; the only free text, 300 characters). In app.js: `AIF[kind](key)` builds the facts, `aiFetch(key)` calls, and
+`aiBox(key, …)` draws the button, waiting line or reply. Replies live in memory (`AI`), never in the save. The prompts
+tell Claude the game decides prices and trade verdicts and that names shared with real players get no real-life facts:
+keep that if you change them. Tests: `node tests/t29.mjs` (recaps) and `node tests/t30.mjs` (the rest), both stubbing
+the function, so no key is needed.
 
 ## Where things stand
 
-Recent work (newest first): team strategy and player tendencies (Stage 16), development moved to after the offseason with bigger swings (15), sortable lists and a clearer draft (14), development report, contract details, free agency over 30 days, coach mode, box scores and game logs, league settings. Not built yet: a team stats page (pace, efficiency, how often each team uses each game plan).
+Recent work (newest first): Claude features and Netlify hosting (Stages 17–18), team strategy and player tendencies (Stage 16), development moved to after the offseason with bigger swings (15), sortable lists and a clearer draft (14), development report, contract details, free agency over 30 days, coach mode, box scores and game logs, league settings. Not built yet: a team stats page (pace, efficiency, how often each team uses each game plan).

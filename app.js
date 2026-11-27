@@ -1130,6 +1130,32 @@ function liveScore() {
 const liveRow = (e) => `<div><span>${e.pts ? "<b>" : ""}${esc(e.txt)}${e.pts ? "</b>" : ""}</span><span class="mute" style="white-space:nowrap">${e.ab ? esc(e.ab) + " · " : ""}${e.s[0]}–${e.s[1]}</span></div>`;
 function watchNext(po) { const n = G.log.length; UI.record = true; if (po) playPlayoffs("day"); else playDays(1, true); UI.record = false; if (G.log.length > n) startLive(G.log.length - 1); }
 
+/* ---------- game recaps ----------
+   A short game story written by Claude from one of your box scores, only when you tap "Write a game recap". The box
+   score goes to this site's own /api/recap function (netlify/functions/recap.mjs), which holds the API key and asks
+   Claude. Recaps are kept in memory for this visit only, not in the save, so the save shape doesn't change. */
+const RECAP = {};
+function recapKey(i) { return G.season + "-" + i; }
+function recapFacts(g) {
+	const side = (t, rows, pts, q) => ({ team: t.region + " " + t.name, pts, q: q || [], players: rows.filter((r) => r[1] > 0).sort((a, b) => b[2] - a[2]).slice(0, 6).map((r) => ({ n: r[0], min: r[1], pts: r[2], reb: r[3], ast: r[4], stl: r[5], blk: r[6], fg: r[8] + "-" + r[9], tp: r[7] + "-" + r[10], ft: r[11] + "-" + r[12] })) });
+	return { season: seasonName(G.season), playoffs: !!g.po, home: !!g.home, you: side(team(G.userTid), g.b[0], g.us, g.q && g.q[0]), opp: side(team(g.o), g.b[1], g.them, g.q && g.q[1]) };
+}
+function recapFetch(i) {
+	const g = G.log[i], k = recapKey(i); if (!g || !g.b || (RECAP[k] && (RECAP[k].wait || RECAP[k].text))) return;
+	RECAP[k] = { wait: true };
+	fetch("/api/recap", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(recapFacts(g)) })
+		.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+		.then((d) => { RECAP[k] = d && d.text ? { text: d.text } : { err: 1 }; })
+		.catch(() => { RECAP[k] = { err: 1 }; })
+		.then(() => { if (UI.sheet && UI.sheet.k === "box" && UI.sheet.i === i) { UI.keepScroll = true; render(); } });
+}
+function recapHtml(i) {
+	const r = RECAP[recapKey(i)];
+	if (r && r.text) { const [hd, ...rest] = r.text.split(/\n+/).filter((x) => x.trim()); return `<div class="recap"><b>${esc(hd)}</b>${rest.map((x) => `<p>${esc(x)}</p>`).join("")}<p class="note">Written by Claude from this box score.</p></div>`; }
+	if (r && r.wait) return '<p class="note">Writing the recap…</p>';
+	return `<button class="btn alt" data-a="recap" data-i="${i}">Write a game recap</button><p class="note">${r && r.err ? "The recap couldn't be written. Recaps work on the online version, with a connection." : "Sends this box score to Claude, which writes a short story of the game."}</p>`;
+}
+
 /* ---------- saving ---------- */
 const IDX = "hardwoodgm:index", CUR = "hardwoodgm:cur", keyOf = (id) => (id === "1" ? KEY : KEY + ":" + id);
 const store = { get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }, del: (k) => { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } } };
@@ -1470,7 +1496,7 @@ function vSheet() {
 		const g = G.log[s.i]; if (!g || !g.b) return "";
 		const tb = (rows) => `<div class="scroll"><table><tr><th>Player</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>Stl</th><th>Blk</th><th>FG</th><th>3P</th><th>FT</th><th>OR</th><th>TO</th><th>PF</th><th>+/−</th></tr>${rows.map((r) => `<tr><td><span class="nm">${esc(r[0])}</span></td><td>${r[1]}</td><td><b>${r[2]}</b></td><td>${r[3]}</td><td>${r[4]}</td><td>${r[5]}</td><td>${r[6]}</td><td>${r[8]}-${r[9]}</td><td>${r[7]}-${r[10]}</td><td>${r[11]}-${r[12]}</td><td>${r[13] == null ? "" : r[13]}</td><td>${r[14] == null ? "" : r[14]}</td><td>${r[15] == null ? "" : r[15]}</td><td>${r[16] == null ? "" : (r[16] > 0 ? "+" : "") + r[16]}</td></tr>`).join("")}</table></div>`;
 		const qs = g.q ? `<div class="scroll"><table><tr><th>Team</th>${g.q[0].map((_, i) => `<th>${i < 4 ? "Q" + (i + 1) : "OT" + (i > 4 ? i - 3 : "")}</th>`).join("")}<th>Final</th></tr>${[[team(G.userTid), g.q[0], g.us], [team(g.o), g.q[1], g.them]].map(([t, q, f]) => `<tr><td>${tname(t)}</td>${q.map((v) => `<td>${v}</td>`).join("")}<td><b>${f}</b></td></tr>`).join("")}</table></div>` : "";
-		h = `${qs}${g.pl ? `<p class="note"><b>Game plans:</b> you ${esc(planText(g.pl[0], 1).replace("played their", "played your"))}; the ${esc(team(g.o).name)} ${esc(planText(g.pl[1], 1))}.</p>` : ""}<h2 class="d">${esc(team(G.userTid).name)} ${g.us} <small>${g.home ? "home" : "away"}</small></h2>${tb(g.b[0])}<h2 class="d">${esc(team(g.o).name)} ${g.them}</h2>${tb(g.b[1])}`;
+		h = `${qs}${recapHtml(s.i)}${g.pl ? `<p class="note"><b>Game plans:</b> you ${esc(planText(g.pl[0], 1).replace("played their", "played your"))}; the ${esc(team(g.o).name)} ${esc(planText(g.pl[1], 1))}.</p>` : ""}<h2 class="d">${esc(team(G.userTid).name)} ${g.us} <small>${g.home ? "home" : "away"}</small></h2>${tb(g.b[0])}<h2 class="d">${esc(team(g.o).name)} ${g.them}</h2>${tb(g.b[1])}`;
 	} else if (s.k === "season") {
 		const x = G.history.find((y) => y.s === s.s); if (!x) return "";
 		h = `<h2 class="d">${seasonName(x.s)}</h2><div class="list">${[["Champion", x.champ], ["MVP", x.mvp + (x.line ? " · " + x.line : "")], ["Finals MVP", x.fmvp], ["Defensive Player", x.dpoy], ["Rookie of the Year", x.roy], ["Sixth Man", x.six], ["Most Improved", x.mip], ["All-League first team", (x.all || []).join(", ")], ["Second team", (x.all2 || []).join(", ")], ["Third team", (x.all3 || []).join(", ")], ["All-Defensive", (x.alld || []).join(", ")], ["All-Rookie", (x.allr || []).join(", ")], ["Top of the draft", ((G.drafts || []).find((y) => y.s === x.s) || { p: [] }).p.slice(0, 5).map((y) => `${y[0]}. ${y[2]} (${y[1]})`).join(", ")], ["All-Star Game", x.as ? `East ${x.as.sc[0]}, West ${x.as.sc[1]} · MVP ${x.as.mvp}` : ""], ["Your season", x.rec + " · " + x.res]].filter((r) => r[1]).map((r) => `<div><span class="mute">${r[0]}</span><b style="text-align:right">${esc(r[1])}</b></div>`).join("")}</div>`;
@@ -1559,6 +1585,7 @@ function act(a, d, el) {
 		coachFlush(); us.c.auto = false; us.lock = on.map((z) => (z === out ? inn : z)); toast(`${inn.p.n} comes in for ${out.p.n} from the next minute.`);
 	}
 	else if (a === "scday") { if (d.k !== "") UI.scDay = +d.k; UI.keepScroll = true; }
+	else if (a === "recap") { UI.keepScroll = true; recapFetch(+d.i); }
 	else if (a === "gbox") { stopLive(); UI.sheet = { k: "gbox", d: +d.d, i: +d.i, id: d.d + "-" + d.i }; }
 	else if (a === "tlog") { UI.sheet = { k: "tlog", tid: +d.tid, id: +d.tid }; }
 	else if (a === "tlall") UI.tlAll = UI.tlAll === +d.tid ? null : +d.tid;

@@ -5,7 +5,7 @@ Dustin's personal basketball GM game: run a franchise from any NBA season 1990â€
 ## Hard rules
 
 - **All code here is original.** Never copy Basketball GM (zengm) code, text, UI wording or assets into this project, even though the player data was originally sourced from its public real-player files. Reimplementing a feature idea with our own code is fine.
-- Personal use only. Don't add analytics, accounts, or anything that sends data anywhere.
+- Personal use only. Don't add analytics, accounts, or anything that sends data anywhere. The one exception, Dustin's call: game recaps send one box score to Claude through the site's own `/api/recap` function, and only when he taps "Write a game recap".
 - **Old saves must keep working.** Saves live in the browser (localStorage + IndexedDB). Any change to the save shape needs a step in `migrate()` in app.js, and a test that loads a save from an older version (see Testing).
 - Dustin mostly plays on his phone. Keep layouts working at 390px wide, tap targets big, and UI text in plain language (say what a setting does, not jargon).
 
@@ -41,9 +41,19 @@ Start the server first (`npm start` in another terminal). Tests assume port 3400
 
 Before calling a change done: run the tests that touch it, run a multi-season `test.mjs` if the engine, ratings or development changed, and check the screens you changed at phone size.
 
-## Publishing to the phone version
+## Publishing
 
-The playable version on Dustin's phone is a private Claude artifact ("Hardwood GM", slug `9e5b01fe-9189-4488-8d97-3f7ce24ec211`). Claude Code can't publish to it. When a change is ready, Dustin opens a Claude chat linked to this computer and asks it to publish this folder's `index.html`, `app.js`, `data.json` and `hist.json` to that artifact. Last published: version 1795806783-ca9f (Stage 16 in NOTES.md).
+The game is hosted on Netlify at https://hardwoodgm-ug2o.netlify.app, linked to this repo: every push to `main` deploys
+it (`netlify.toml`: the folder as is, no build step). The site is private to Dustin's Netlify team, so it asks for a
+Netlify login. Saves stay in the browser per site, so leagues from the older Claude-artifact version (slug
+`9e5b01fe-9189-4488-8d97-3f7ce24ec211`) move over with Export and Import a league file.
+
+## Game recaps (Claude)
+
+`netlify/functions/recap.mjs`, served at `/api/recap`, asks Claude (`claude-haiku-5-5`) for a short game story from
+one box score. The key is `ANTHROPIC_API_KEY` in Netlify's environment, never in the repo. The function takes box-score
+facts only (no free text), checks the origin, and rate-limits. In the game, `recapFetch`/`recapHtml` in app.js; recaps
+live in memory for the visit, not in the save. Test: `node tests/t29.mjs` (stubs the function, so no key needed).
 
 ## Where things stand
 

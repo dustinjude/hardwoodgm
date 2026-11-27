@@ -1,0 +1,22 @@
+import puppeteer from "puppeteer";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const browser = await puppeteer.launch({ executablePath: process.env.CHROME || undefined, headless: "new", args: ["--no-sandbox", "--disable-gpu"] });
+const page = await browser.newPage(); await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+const errors = []; page.on("pageerror", (e) => errors.push("PAGEERROR " + e.message.slice(0, 300))); page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource/.test(m.text())) errors.push("CONSOLE " + m.text().slice(0, 200)); });
+await page.goto("http://127.0.0.1:3400/index.html", { waitUntil: "networkidle2" }); await sleep(400);
+const click = async (sel, n = 0) => { const ok = await page.evaluate((sel, n) => { const e = document.querySelectorAll(sel)[n]; if (!e) return false; e.click(); return true; }, sel, n); await sleep(40); return ok; };
+const [season, ab, n] = [+(process.argv[2] || 1996), process.argv[3] || "VAN", +(process.argv[4] || 6)];
+const rows = await page.evaluate((season, ab, n) => { const HG = window.HG, out = []; HG.newGame(season, HG.DATA["s" + season].teams.findIndex((t) => t[0] === ab));
+  for (let k = 0; k < n; k++) { HG.autoSeason(); const G = HG.G, h = G.history[0], o = G.owner; out.push({ s: h.s, rec: h.rec, res: h.res, owner: +(o.w + o.p + o.m).toFixed(2), fired: !!G.fired, six: h.six, mip: h.mip, as: h.as && h.as.sc.join("-") + " " + h.as.mvp, allr: (h.allr || []).length, cash: +G.fin.cash.toFixed(0), offers: G.news.filter((x) => /made you an offer/.test(x.t)).length, teams: G.teams.length, user: G.teams[G.userTid].ab, phase: G.phase });
+    if (G.fired) { const t = HG.standings().reverse().filter((x) => x.tid !== G.userTid)[0]; HG.takeJob(t.tid); HG.autoSeason(); out.push({ took: HG.G.teams[HG.G.userTid].ab, phase: HG.G.phase, season: HG.G.season, roster: HG.G.players.filter((p) => p.tid === HG.G.userTid).length }); } }
+  return out; }, season, ab, n);
+for (const r of rows) console.log(JSON.stringify(r));
+await page.evaluate(() => { const HG = window.HG; HG.playDays(40); for (const t of ["home", "roster", "league", "moves", "more"]) { HG.UI.tab = t; for (const l of ["standings", "leaders", "awards", "playoffs", "history"]) { HG.UI.league = l; for (const m of ["fa", "trade", "draft"]) { HG.UI.moves = m; HG.render(); } } } HG.aiOffer(); HG.aiOffer(); HG.aiOffer(); HG.aiOffer(); HG.UI.tab = "home"; HG.render(); });
+console.log("offers on home:", await page.evaluate(() => [...document.querySelectorAll('[data-a="offer"]')].map((b) => b.closest("div").innerText.replace(/\s+/g, " ").slice(0, 150)).join(" || ")));
+if (await click('[data-a="offer"]')) console.log("offer review:", await page.evaluate(() => document.querySelector("main p b")?.innerText + " | A " + window.HG.UI.tradeA.length + " B " + window.HG.UI.tradeB.length + "+" + window.HG.UI.tradePB.length));
+await page.evaluate(() => { const HG = window.HG, G = HG.G; HG.UI.tradeA = [G.players.filter((p) => p.tid === G.userTid).sort((a, b) => b.ovr - a.ovr)[0].id]; HG.UI.tradeB = []; HG.UI.tradePB = []; HG.UI.tradePA = []; HG.UI.tab = "moves"; HG.UI.moves = "trade"; HG.render(); });
+await click('[data-a="shop"]'); console.log("block:", await page.evaluate(() => [...document.querySelectorAll('[data-a="blockpick"]')].map((b) => b.closest("div").innerText.replace(/\s+/g, " ").slice(0, 110)).join(" || ")));
+await click('[data-a="blockpick"]'); console.log("block review:", await page.evaluate(() => document.querySelector("main p b")?.innerText)); await click('[data-a="trade"]');
+await click('[data-a="tab"][data-k="league"]'); await click('[data-a="league"][data-k="awards"]'); console.log("awards:", await page.evaluate(() => document.querySelector("main").innerText.replace(/\s+/g, " ").slice(60, 300)));
+await click('[data-a="tab"][data-k="more"]'); console.log("owner:", await page.evaluate(() => document.querySelector("main section").innerText.replace(/\s+/g, " ").slice(0, 200))); const s0 = await page.evaluate(() => window.HG.G.season); await click('[data-a="autoplay"][data-k="1"]'); await sleep(6000); console.log("autoplay 1:", s0, "->", await page.evaluate(() => window.HG.G.season + " " + window.HG.G.phase + " | toast " + (document.querySelector(".toast")?.innerText || "")));
+console.log("ERRORS", JSON.stringify(errors.slice(0, 6))); await browser.close();

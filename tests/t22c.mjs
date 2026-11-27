@@ -1,0 +1,22 @@
+import puppeteer from "puppeteer";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const browser = await puppeteer.launch({ executablePath: process.env.CHROME || undefined, headless: "new", args: ["--no-sandbox", "--disable-gpu"] });
+const page = await browser.newPage(); await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+const errors = []; page.on("pageerror", (e) => errors.push("PAGEERROR " + e.message.slice(0, 300)));
+await page.goto("http://127.0.0.1:3400/index.html", { waitUntil: "networkidle2" }); await sleep(900);
+const tap = async (sel) => { const ok = await page.evaluate((sel) => { const el = document.querySelector(sel); if (!el) return false; el.click(); return true; }, sel); await sleep(250); return ok; };
+await page.evaluate(() => { const HG = window.HG; HG.newGame(2003, HG.DATA.s2003.teams.findIndex((t) => t[0] === "ORL")); HG.playDays(999); HG.playPlayoffs("all"); HG.render(); });
+console.log("after playoffs: sheet", await page.evaluate(() => window.HG.UI.sheet && window.HG.UI.sheet.k), "| prog", await page.evaluate(() => !!window.HG.G.prog));
+await page.evaluate(() => { const HG = window.HG; HG.UI.sheet = null; HG.simDraft(false); if (HG.G.phase === "resign") HG.finishResign(); const g = HG.G; let mine = g.players.filter((p) => p.tid === g.userTid).sort((a, b) => a.ovr - b.ovr); while (mine.length > 15) mine.shift().tid = -1; HG.fillMine(); HG.render(); });
+await tap('[data-a="play"]'); const k = await page.evaluate(() => [...document.querySelectorAll('.sheet [data-a="go"]')].map((b) => b.dataset.k).find((x) => /^fa:30/.test(x))); await tap(`.sheet [data-a="go"][data-k="${k}"]`); await sleep(400);
+console.log("season start:", await page.evaluate(() => { const G = window.HG.G; return `${G.season} ${G.phase}, sheet ${window.HG.UI.sheet && window.HG.UI.sheet.k}, report for ${G.prog && G.prog.s}`; }));
+console.log("report:", await page.evaluate(() => document.querySelector(".sheet")?.innerText.replace(/\s+/g, " ").slice(0, 520)));
+await page.screenshot({ path: "tests/shots/t22c-report.png" });
+await tap('[data-a="progwhy"]'); console.log("how it works:", await page.evaluate(() => [...document.querySelectorAll(".sheet p.note")].map((p) => p.innerText).find((t) => /unusual/.test(t))));
+for (const f of ["up", "down"]) { await tap(`[data-a="progf"][data-k="${f}"]`); console.log(f + ":", await page.evaluate(() => [...document.querySelectorAll(".sheet .list > div")].slice(0, 3).map((d) => d.innerText.replace(/\s+/g, " ")).join(" / "))); }
+await page.evaluate(() => { const HG = window.HG; HG.UI.sheet = null; HG.UI.tab = "home"; HG.render(); }); console.log("home card:", await page.evaluate(() => { const s = [...document.querySelectorAll("main section")].find((x) => /development/i.test(x.querySelector("h2")?.innerText || "")); return s ? s.innerText.replace(/\s+/g, " ").slice(0, 200) : null; }));
+const pid = await page.evaluate(() => { const G = window.HG.G; return G.prog.rows.map((r) => G.players.find((p) => p.id === r[0])).find((p) => p && p.tid === G.userTid).id; });
+await page.evaluate((id) => { const HG = window.HG; HG.UI.sheet = { k: "player", id }; HG.render(); }, pid); console.log("player line:", await page.evaluate(() => [...document.querySelectorAll(".sheet p.note")].map((p) => p.innerText).find((t) => /^Before/.test(t))));
+await page.evaluate(() => { const HG = window.HG; HG.UI.sheet = null; HG.UI.tab = "roster"; HG.render(); }); console.log("roster:", await page.evaluate(() => [...document.querySelectorAll("main td.ovr")].slice(0, 6).map((t) => t.innerText.replace(/\s+/g, "")).join(" ")), "|", await page.evaluate(() => [...document.querySelectorAll("main p.note")].map((p) => p.innerText).find((t) => /small numbers/.test(t))));
+console.log("news:", await page.evaluate(() => window.HG.G.news.find((n) => /Player development/.test(n.t))?.t));
+console.log("ERRORS", JSON.stringify(errors)); await browser.close();

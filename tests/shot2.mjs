@@ -1,0 +1,10 @@
+import puppeteer from "puppeteer";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const browser = await puppeteer.launch({ executablePath: process.env.CHROME || undefined, headless: "new", args: ["--no-sandbox", "--disable-gpu"] });
+const page = await browser.newPage(); await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
+await page.goto("http://127.0.0.1:3400/index.html", { waitUntil: "networkidle2" }); await sleep(400);
+await page.evaluate(() => { const HG = window.HG; HG.newGame(1996, HG.DATA.s1996.teams.findIndex((t) => t[0] === "ORL")); HG.playDays(30); HG.aiOffer(); HG.aiOffer(); HG.aiOffer(); HG.UI.toast = ""; HG.UI.tab = "more"; HG.render(); });
+await sleep(3500); await page.evaluate(() => { window.HG.UI.toast = ""; window.HG.render(); }); await page.screenshot({ path: "tests/shots/s-office.png" });
+await page.evaluate(() => { const HG = window.HG; HG.UI.tab = "home"; HG.UI.sheet = { k: "box", i: HG.G.log.length - 1 }; HG.render(); }); await sleep(200); await page.screenshot({ path: "tests/shots/s-box.png" });
+const over = await page.evaluate(() => { const out = []; for (const tab of ["home", "roster", "league", "moves", "more"]) { window.HG.UI.sheet = null; window.HG.UI.tab = tab; window.HG.render(); out.push(tab + ":" + document.documentElement.scrollWidth); } return out.join(" "); });
+console.log("page widths (viewport 390):", over); await browser.close();

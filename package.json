@@ -1,0 +1,15 @@
+{
+  "name": "hardwood-gm",
+  "private": true,
+  "type": "module",
+  "description": "Hardwood GM: a personal basketball GM game. Plain HTML/JS, no build step.",
+  "scripts": {
+    "start": "node serve.mjs . 3400",
+    "serve:old": "node serve.mjs old/v20 3420 & node serve.mjs old/v21 3421",
+    "test:all": "node tests/run-all.mjs",
+    "test:season": "node tests/test.mjs 2016 2"
+  },
+  "devDependencies": {
+    "puppeteer": "^24.0.0"
+  }
+}

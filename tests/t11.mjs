@@ -1,0 +1,13 @@
+import puppeteer from "puppeteer";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const browser = await puppeteer.launch({ executablePath: process.env.CHROME || undefined, headless: "new", args: ["--no-sandbox", "--disable-gpu"] });
+const page = await browser.newPage(); await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true }); const errors = []; page.on("pageerror", (e) => errors.push("PAGEERROR " + e.message.slice(0, 300)));
+await page.goto("http://127.0.0.1:3400/index.html", { waitUntil: "networkidle2" }); await sleep(900);
+const tap = async (sel) => { const ok = await page.evaluate((sel) => { const el = document.querySelector(sel); if (!el) return false; el.click(); return true; }, sel); await sleep(250); return ok; };
+await page.evaluate(() => { const HG = window.HG; HG.newGame(2020, 5); HG.playDays(10); HG.UI.sheet = { k: "play" }; HG.render(); });
+console.log("options:", await page.evaluate(() => [...document.querySelectorAll(".sheet button")].map((b) => b.innerText).join(" | ")));
+const k = await page.evaluate(() => [...document.querySelectorAll('.sheet [data-a="go"]')].find((b) => /deadline/.test(b.innerText))?.dataset.k); await tap(`.sheet [data-a="go"][data-k="${k}"]`);
+console.log("after:", await page.evaluate(() => { const HG = window.HG, G = HG.G; HG.UI.tab = "moves"; HG.UI.moves = "trade"; HG.render(); return `day ${G.day} of ${G.sched.length}, deadline day ${Math.floor(G.sched.length * .7)}, trade: ${HG.tradeCheck().msg}`; }));
+await page.evaluate(() => { const HG = window.HG; HG.playDays(1); HG.UI.sheet = { k: "play" }; HG.render(); });
+console.log("next day:", await page.evaluate(() => window.HG.tradeCheck().msg + " | " + [...document.querySelectorAll(".sheet button")].map((b) => b.innerText).join(" | ")));
+console.log("ERRORS", JSON.stringify(errors)); await browser.close();

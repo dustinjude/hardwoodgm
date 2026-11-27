@@ -1,0 +1,12 @@
+import puppeteer from "puppeteer";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const browser = await puppeteer.launch({ executablePath: process.env.CHROME || undefined, headless: "new", args: ["--no-sandbox", "--disable-gpu"] });
+const page = await browser.newPage(); await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+const errors = []; page.on("pageerror", (e) => errors.push("PAGEERROR " + e.message.slice(0, 300)));
+await page.goto("http://127.0.0.1:3400/index.html", { waitUntil: "networkidle2" }); await sleep(900);
+await page.evaluate(() => { const HG = window.HG; HG.newGame(2003, HG.DATA.s2003.teams.findIndex((t) => t[0] === "ORL")); HG.playDays(999); HG.playPlayoffs("all"); HG.simDraft(false); HG.UI.toast = ""; HG.render(); });
+await page.screenshot({ path: "tests/shots/t19-resign2.png" });
+const r = await page.evaluate(() => { const HG = window.HG, G = HG.G; HG.finishResign(); const top = G.players.filter((p) => p.tid === -1).sort((a, b) => b.ovr - a.ovr); const p0 = top[0]; G.players.filter((p) => p.tid === G.userTid).forEach((p) => { p.sal += 3; }); HG.UI.sheet = { k: "player", id: p0.id }; HG.render(); return p0.n; });
+await sleep(500); console.log("sheet for", r, ":", await page.evaluate(() => [...document.querySelectorAll(".sheet p")].map((p) => p.innerText).filter((t) => /wants|fit|cap room/i.test(t)).join(" / ")));
+await page.evaluate(() => { const b = [...document.querySelectorAll(".sheet p")].find((p) => /wants/i.test(p.innerText)); b.scrollIntoView({ block: "center" }); }); await page.screenshot({ path: "tests/shots/t19-sheet.png" });
+console.log("ERRORS", JSON.stringify(errors)); await browser.close();

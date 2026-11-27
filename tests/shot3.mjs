@@ -1,0 +1,11 @@
+import puppeteer from "puppeteer";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const browser = await puppeteer.launch({ executablePath: process.env.CHROME || undefined, headless: "new", args: ["--no-sandbox", "--disable-gpu"] });
+const page = await browser.newPage(); await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
+await page.goto("http://127.0.0.1:3400/index.html", { waitUntil: "networkidle2" }); await sleep(400);
+await page.evaluate(() => { const HG = window.HG; HG.newGame(1996, HG.DATA.s1996.teams.findIndex((t) => t[0] === "ORL")); HG.playDays(20); HG.UI.toast = ""; const p = HG.G.players.find((x) => x.n === "Anfernee Hardaway"); HG.UI.tab = "roster"; HG.UI.sheet = { k: "player", id: p.id }; HG.render(); });
+await sleep(200); await page.screenshot({ path: "tests/shots/s-player.png" });
+await page.evaluate(() => { const HG = window.HG; HG.UI.sheet = null; HG.watchNext(false); }); await sleep(500); await page.evaluate(() => { document.querySelector('[data-a="livefast"]').click(); }); await sleep(9000);
+await page.screenshot({ path: "tests/shots/s-live.png" });
+console.log(await page.evaluate(() => document.querySelector("#lvscore").innerText.replace(/\s+/g, " ") + " | events " + window.HG.UI.live.ev.length + " | " + [...document.querySelectorAll("#lvfeed > div")].slice(0, 6).map((d) => d.innerText.replace(/\s+/g, " ")).join(" || ")));
+await browser.close();

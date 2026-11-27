@@ -1,0 +1,28 @@
+import puppeteer from "puppeteer";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const browser = await puppeteer.launch({ executablePath: process.env.CHROME || undefined, headless: "new", args: ["--no-sandbox", "--disable-gpu"] });
+const page = await browser.newPage(); await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+const errors = []; page.on("pageerror", (e) => errors.push("PAGEERROR " + e.message.slice(0, 300))); page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource|fonts/.test(m.text())) errors.push("CONSOLE " + m.text().slice(0, 200)); });
+await page.goto("http://127.0.0.1:3400/index.html", { waitUntil: "networkidle2" }); await sleep(900);
+const tap = async (sel) => { const ok = await page.evaluate((sel) => { const el = document.querySelector(sel); if (!el) return false; el.click(); return true; }, sel); await sleep(150); return ok; };
+const fix = `(() => { const HG = window.HG, g = HG.G; let mine = g.players.filter((p) => p.tid === g.userTid).sort((a, b) => a.ovr - b.ovr); while (mine.length > 15) mine.shift().tid = -1; const fas = g.players.filter((p) => p.tid === -1).sort((a, b) => a.ovr - b.ovr); while (mine.length < 13) { const p = fas.shift(); p.tid = g.userTid; p.sal = 1; p.exp = g.season + 1; delete p.ask; mine.push(p); } })()`;
+await page.evaluate(() => { const HG = window.HG; HG.newGame(1996, HG.DATA.s1996.teams.findIndex((t) => t[0] === "ORL")); HG.UI.tab = "more"; HG.render(); });
+console.log("open:", await tap('[data-a="settings"]'), await page.evaluate(() => document.querySelectorAll('.sheet [data-a="setopt"]').length + " options; pressed: " + [...document.querySelectorAll('.sheet [aria-pressed="true"]')].map((b) => b.innerText).join(",")));
+await page.screenshot({ path: "tests/shots/t13-settings.png" });
+const set = async (k, v) => { const ok = await tap(`.sheet [data-a="setopt"][data-k="${k}"][data-v="${v}"]`); if (!ok) console.log("MISSING", k, v); };
+await page.evaluate(() => { document.querySelector(".sheet").scrollTop = 600; }); await set("pot", 4); console.log("scroll kept:", await page.evaluate(() => document.querySelector(".sheet").scrollTop));
+await set("games", 50); await set("po", 5); await set("po1", 5); await set("lot", "none"); await set("deadline", 0); await set("hca", 5); await set("inj", 2); await set("timeline", 0); await set("cap", 100); await set("taxOver", 999);
+let r = await page.evaluate(() => { const HG = window.HG, G = HG.G; HG.UI.sheet = null; const c = {}; for (const d of G.sched) for (const g of d) { c[g[0]] = (c[g[0]] || 0) + 1; c[g[1]] = (c[g[1]] || 0) + 1; } HG.playDays(45); const mid = HG.tradeCheck().msg; HG.playDays(999); const t = G.teams[G.userTid]; return { set: G.set, ng: G.ng, perTeam: [...new Set(Object.values(c))], rec: t.w + "-" + t.l, mid, phase: G.phase, round: G.po.round, series: G.po.series.map((s) => s.n), nSeries: G.po.series.length, fin: Math.round(G.fin.cur.gate + G.fin.cur.merch + G.fin.cur.tv), inj: G.players.filter((p) => p.tid >= 0 && p.inj > 0).length, godUsed: !!G.godUsed }; });
+console.log("season:", JSON.stringify(r));
+r = await page.evaluate(() => { const HG = window.HG; HG.playPlayoffs("all"); const G = HG.G; HG.UI.tab = "league"; HG.UI.league = "playoffs"; HG.UI.sheet = null; HG.render(); return { phase: G.phase, done: G.po.done.map((x) => x.r + ":" + Math.max(x.wa, x.wb)).join(" "), lot: G.draft.lot.map((x) => x[1] - x[2]).join(","), news: G.news.filter((n) => /lottery/.test(n.t)).length, teams: G.teams.length, bracket: [...document.querySelectorAll("main section h2")].map((h) => h.innerText).join("|") }; });
+console.log("playoffs:", JSON.stringify(r));
+r = await page.evaluate((fix) => { const HG = window.HG; HG.simDraft(false); if (HG.G.phase === "resign") HG.finishResign(); eval(fix); HG.startSeason(); const G = HG.G; return { season: G.season, teams: G.teams.length, names: G.teams.map((t) => t.ab).join(",").slice(0, 60), ng: G.ng, days: G.sched.length }; }, fix);
+console.log("next:", JSON.stringify(r));
+// hard cap
+r = await page.evaluate(() => { const HG = window.HG, G = HG.G; G.set.capType = "hard"; G.set.cap = 80; G.set.games = 82; const pay = (tid) => G.players.filter((p) => p.tid === tid).reduce((s, p) => s + p.sal, 0); const fa = G.players.filter((p) => p.tid === -1).sort((a, b) => b.ovr - a.ovr)[0]; const over = G.teams.filter((t) => pay(t.tid) > 80).length; HG.playDays(999); HG.playPlayoffs("all"); HG.simDraft(false); return { over0: over, phase: G.phase, resign: G.resign.length, pay: Math.round(pay(G.userTid)) }; });
+console.log("hard cap season:", JSON.stringify(r));
+r = await page.evaluate((fix) => { const HG = window.HG, G = HG.G; const pay = (tid) => G.players.filter((p) => p.tid === tid).reduce((s, p) => s + p.sal, 0); if (G.phase === "resign") HG.finishResign(); const before = G.teams.map((t) => pay(t.tid)); HG.aiFreeAgency && 0; eval(fix); HG.startSeason(); const after = G.teams.map((t) => Math.round(pay(t.tid))); return { season: G.season, maxPay: Math.max(...after), over: after.filter((x) => x > 81).length, sizes: [...new Set(G.teams.map((t) => G.players.filter((p) => p.tid === t.tid).length))].join(",") }; }, fix);
+console.log("hard cap offseason:", JSON.stringify(r));
+// reset
+await page.evaluate(() => { const HG = window.HG; HG.UI.tab = "more"; HG.UI.sheet = { k: "settings" }; HG.render(); }); await tap('[data-a="setreset"]'); console.log("reset:", await page.evaluate(() => JSON.stringify(window.HG.G.set) + " ng " + window.HG.G.ng + " days " + window.HG.G.sched.length));
+console.log("ERRORS", JSON.stringify(errors.slice(0, 8))); await browser.close();

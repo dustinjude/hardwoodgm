@@ -1,0 +1,14 @@
+import puppeteer from "puppeteer";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const browser = await puppeteer.launch({ executablePath: process.env.CHROME || undefined, headless: "new", args: ["--no-sandbox", "--disable-gpu"] });
+const page = await browser.newPage(); await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+const errors = []; page.on("pageerror", (e) => errors.push("PAGEERROR " + e.message.slice(0, 300)));
+await page.goto("http://127.0.0.1:3400/index.html", { waitUntil: "networkidle2" }); await sleep(900);
+const r = await page.evaluate(() => { const HG = window.HG; HG.newGame(2003, HG.DATA.s2003.teams.findIndex((t) => t[0] === "ORL")); HG.playDays(999); HG.playPlayoffs("all"); HG.simDraft(false); const G = HG.G; HG.UI.sheet = null; HG.render(); return { phase: G.phase, resign: G.resign.length, roster: G.players.filter((p) => p.tid === G.userTid).length, pay: Math.round(G.players.filter((p) => p.tid === G.userTid).reduce((a, p) => a + p.sal, 0)), fa: G.players.filter((p) => p.tid === -1).length }; });
+console.log(JSON.stringify(r));
+await page.screenshot({ path: "tests/shots/t18-resign.png", fullPage: true });
+await page.evaluate(() => { const HG = window.HG; HG.finishResign(); });
+await page.screenshot({ path: "tests/shots/t18-fa.png" });
+await page.evaluate(() => { const HG = window.HG; const p = HG.G.players.filter((p) => p.tid === -1).sort((a, b) => b.ovr - a.ovr)[0]; HG.UI.sheet = { k: "player", id: p.id }; HG.render(); });
+await page.screenshot({ path: "tests/shots/t18-fasheet.png", fullPage: false });
+console.log("ERRORS", JSON.stringify(errors)); await browser.close();

@@ -1,0 +1,11 @@
+import puppeteer from "puppeteer";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const browser = await puppeteer.launch({ executablePath: process.env.CHROME || undefined, headless: "new", args: ["--no-sandbox", "--disable-gpu"] });
+const page = await browser.newPage(); await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true }); const errors = []; page.on("pageerror", (e) => errors.push("PAGEERROR " + e.message.slice(0, 300)));
+await page.goto("http://127.0.0.1:3400/index.html", { waitUntil: "networkidle2" }); await sleep(900);
+await page.evaluate(() => { const HG = window.HG; HG.newGame(2026, 5); HG.playDays(5); HG.UI.tab = "league"; HG.UI.league = "leaders"; HG.UI.pmode = "rat"; HG.render(); });
+const rows = () => page.evaluate(() => [...document.querySelectorAll("main table tr")].slice(1, 5).map((r) => r.innerText.replace(/\s+/g, " ").slice(0, 44)).join(" / "));
+const setv = async (v) => { await page.evaluate((v) => { const el = document.querySelector("#psearch"); el.value = v; el.dispatchEvent(new Event("change", { bubbles: true })); }, v); await sleep(150); };
+await setv("doncic"); console.log("doncic:", await rows()); await setv("dybantsa"); console.log("prospect:", await rows()); await page.screenshot({ path: "tests/shots/t12-search.png" });
+await setv("zzzz"); console.log("none:", await rows()); await page.evaluate(() => document.querySelector('[data-a="psearchclear"]').click()); await sleep(150); console.log("cleared:", await rows());
+console.log("ERRORS", JSON.stringify(errors)); await browser.close();
